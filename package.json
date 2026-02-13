@@ -1,0 +1,37 @@
+{
+  "name": "bot-casino",
+  "version": "1.0.0",
+  "description": "Discord Casino and Music Bot",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "casino",
+    "music"
+  ],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=20.20.0"
+  },
+  "dependencies": {
+    "@discord-player/extractor": "^7.1.0",
+    "@discordjs/voice": "^0.18.0",
+    "@distube/ytdl-core": "latest",
+    "discord-player": "^7.1.0",
+    "discord.js": "^14.17.3",
+    "dotenv": "^16.4.7",
+    "ffmpeg-static": "^5.2.0",
+    "libsodium-wrappers": "^0.7.15",
+    "opusscript": "^0.1.1",
+    "play-dl": "^1.9.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}
