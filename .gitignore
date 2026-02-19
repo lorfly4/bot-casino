@@ -1,6 +1,2 @@
-node_modules/
 .env
-*.exe
-*.log
-database.json
-credentials.json
+node_modules

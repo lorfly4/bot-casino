@@ -1,4 +1,3 @@
-require('dotenv').config();
 const {
     Client,
     GatewayIntentBits,
@@ -26,6 +25,8 @@ const ytdl = require('@distube/ytdl-core');
 const ffmpeg = require('ffmpeg-static');
 const { Player } = require('discord-player');
 const { DefaultExtractors } = require('@discord-player/extractor');
+require('dotenv').config();
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 
 
@@ -316,115 +317,223 @@ player.events.on('playerStart', (queue, track) => {
     /* ========================
        BLACKJACK (TIDAK DIUBAH)
     ======================== */
+    /* ========================
+       BLACKJACK: !play <jumlah>
+    ======================== */
     if (command === 'play' && args.length > 0 && !isNaN(parseInt(args[0]))) {
-
-        if (activeGames.has(message.author.id)) {
-            return message.reply('Kamu masih punya permainan yang sedang berjalan!');
-        }
-
         const bet = parseInt(args[0]);
         if (bet <= 0) return message.reply('Masukkan jumlah taruhan yang valid!');
+        await startBlackjack(message, bet);
+    }
 
+    /* ========================
+       BLACKJACK: !allin
+    ======================== */
+    if (command === 'allin') {
         const user = db.getUser(message.author.id);
-        if (user.balance < bet) {
-            return message.reply(`Saldo tidak cukup! Saldo kamu: ${user.balance}`);
+        const bet = user.balance;
+
+        if (bet <= 0) return message.reply('Saldo kamu habis! Claim dulu pakai !claim');
+        
+        await startBlackjack(message, bet);
+    }
+
+    /* ========================
+       GEMINI: !ask <pertanyaan>
+    ======================== */
+    if (command === 'ask') {
+        const question = args.join(' ');
+        if (!question) return message.reply('Mau tanya apa?');
+
+        try {
+            const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+            // Menggunakan model Gemini 3 Flash Preview sesuai permintaan
+            const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+
+            await message.channel.sendTyping();
+
+            const result = await model.generateContent(question);
+            const response = await result.response;
+            const text = response.text();
+
+            if (text.length > 2000) {
+                const chunks = text.match(/[\s\S]{1,1900}/g);
+                for (const chunk of chunks) {
+                    await message.reply(chunk);
+                }
+            } else {
+                await message.reply(text);
+            }
+        } catch (error) {
+            console.error(error);
+            return message.reply('Maaf, saya sedang pusing (Error Gemini API). Pastikan API Key benar!');
         }
-
-        db.updateBalance(message.author.id, -bet);
-
-        const game = new BlackjackGame(message.author.id, bet);
-        activeGames.set(message.author.id, game);
-
-        const state = game.getState();
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('hit').setLabel('Hit').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('stand').setLabel('Stand').setStyle(ButtonStyle.Secondary)
-        );
-
-        const embed = new EmbedBuilder()
-            .setTitle('Blackjack Game')
-            .setDescription(`Taruhan: ${bet} koin`)
-            .addFields(
-                { name: 'Kartu Kamu', value: `${formatHand(state.playerHand)} (Skor: ${state.playerScore})`, inline: true },
-                { name: 'Kartu Dealer', value: `${state.dealerHand[0].value}${state.dealerHand[0].suit} [Hidden]`, inline: true }
-            )
-            .setColor('Blue');
-
-        const response = await message.reply({ embeds: [embed], components: [row] });
-
-        const collector = response.createMessageComponentCollector({
-            componentType: ComponentType.Button,
-            time: 60000
-        });
-
-        collector.on('collect', async i => {
-            if (i.user.id !== message.author.id) {
-                return i.reply({ content: 'Ini bukan permainanmu!', ephemeral: true });
-            }
-
-            if (i.customId === 'hit') {
-                const newState = game.hit();
-
-                if (newState.status === 'loss') {
-                    activeGames.delete(message.author.id);
-
-                    return i.update({
-                        embeds: [
-                            new EmbedBuilder()
-                                .setTitle('Kamu Kalah!')
-                                .setDescription(`Bust! Skor kamu: ${newState.playerScore}`)
-                                .setColor('Red')
-                        ],
-                        components: []
-                    });
-                }
-
-                return i.update({
-                    embeds: [
-                        new EmbedBuilder()
-                            .setTitle('Blackjack')
-                            .setDescription(`Skor kamu: ${newState.playerScore}`)
-                            .setColor('Blue')
-                    ],
-                    components: [row]
-                });
-            }
-
-            if (i.customId === 'stand') {
-                const finalState = game.stand();
-                activeGames.delete(message.author.id);
-
-                let resultText = 'Seri';
-                let color = 'Yellow';
-
-                if (finalState.status === 'win') {
-                    db.updateBalance(message.author.id, finalState.bet * 2);
-                    resultText = `Kamu menang! +${finalState.bet}`;
-                    color = 'Green';
-                } else if (finalState.status === 'loss') {
-                    resultText = 'Kamu kalah';
-                    color = 'Red';
-                } else {
-                    db.updateBalance(message.author.id, finalState.bet);
-                }
-
-                return i.update({
-                    embeds: [
-                        new EmbedBuilder()
-                            .setTitle('Hasil Akhir')
-                            .setDescription(resultText)
-                            .setColor(color)
-                    ],
-                    components: []
-                });
-            }
-        });
     }
 });
 
+// Format hand function
 function formatHand(hand) {
-    return hand.map(c => `${c.value}${c.suit}`).join(', ');
+    return hand.map(c => `[${c.value}${c.suit}]`).join(' ');
+}
+
+function formatHandEmoji(hand) {
+    // Map of suit characters/symbols to colored emojis
+    const suitMap = {
+        'H': '♥️', '♥': '♥️', // Hearts
+        'D': '♦️', '♦': '♦️', // Diamonds
+        'S': '♠️', '♠': '♠️', // Spades
+        'C': '♣️', '♣': '♣️'  // Clubs
+    };
+
+    return hand.map(c => {
+        const suit = suitMap[c.suit] || c.suit;
+        return `${c.value} ${suit}`;
+    }).join(' - ');
+}
+
+async function startBlackjack(message, bet) {
+    if (activeGames.has(message.author.id)) {
+        return message.reply('Kamu masih punya permainan yang sedang berjalan!');
+    }
+
+    const user = db.getUser(message.author.id);
+    if (user.balance < bet) {
+        return message.reply(`Saldo tidak cukup! Saldo kamu: ${user.balance}`);
+    }
+
+    db.updateBalance(message.author.id, -bet);
+
+    const game = new BlackjackGame(message.author.id, bet);
+    activeGames.set(message.author.id, game);
+
+    const state = game.getState();
+
+    const row = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('hit')
+                .setLabel('Hit')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId('stand')
+                .setLabel('Stand')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
+    const playerScoreStr = state.playerScore === 21 ? 'Blackjack' : state.playerScore;
+
+    const embed = new EmbedBuilder()
+        .setAuthor({ name: message.author.tag, iconURL: message.author.displayAvatarURL() })
+        .setDescription(`Taruhan: ${bet} koin`)
+        .addFields(
+            { name: 'Your Hand', value: `${formatHandEmoji(state.playerHand)}\nValue: ${playerScoreStr}`, inline: true },
+            { name: 'Dealer Hand', value: `${formatHandEmoji([state.dealerHand[0]])} - ?\nValue: ?`, inline: true }
+        )
+        .setColor('Blue');
+
+    const response = await message.reply({ embeds: [embed], components: [row] });
+
+    const collector = response.createMessageComponentCollector({
+        componentType: ComponentType.Button,
+        time: 60000
+    });
+
+    collector.on('collect', async i => {
+        if (i.user.id !== message.author.id) {
+            return i.reply({ content: 'Ini bukan permainanmu!', ephemeral: true });
+        }
+
+        if (i.customId === 'hit') {
+            await i.deferUpdate();
+            const newState = game.hit();
+            const newScoreStr = newState.playerScore > 21 ? `${newState.playerScore} (Bust)` : (newState.playerScore === 21 ? 'Blackjack' : newState.playerScore);
+
+            if (newState.status === 'loss') {
+                activeGames.delete(message.author.id);
+
+                const lossEmbed = new EmbedBuilder()
+                    .setAuthor({ name: message.author.tag, iconURL: message.author.displayAvatarURL() })
+                    .setDescription(`**You lost ${bet} coins**\nResult: You busted`)
+                    .addFields(
+                        { name: 'Your Hand', value: `${formatHandEmoji(newState.playerHand)}\nValue: ${newScoreStr}`, inline: true },
+                        { name: 'Dealer Hand', value: `${formatHandEmoji(newState.dealerHand)}\nValue: ${newState.dealerScore}`, inline: true }
+                    )
+                    .setColor('Red');
+
+                return i.editReply({
+                    embeds: [lossEmbed],
+                    components: []
+                });
+            }
+
+            const hitEmbed = new EmbedBuilder()
+                .setAuthor({ name: message.author.tag, iconURL: message.author.displayAvatarURL() })
+                .setDescription(`Taruhan: ${bet} koin`)
+                .addFields(
+                    { name: 'Your Hand', value: `${formatHandEmoji(newState.playerHand)}\nValue: ${newScoreStr}`, inline: true },
+                    { name: 'Dealer Hand', value: `${formatHandEmoji([newState.dealerHand[0]])} - ?\nValue: ?`, inline: true }
+                )
+                .setColor('Blue');
+
+            return i.editReply({
+                embeds: [hitEmbed],
+                components: [row]
+            });
+        }
+
+        if (i.customId === 'stand') {
+            await i.deferUpdate();
+            const finalState = game.stand();
+            activeGames.delete(message.author.id);
+
+            let resultText = '';
+            let color = 'Yellow';
+            let finalResult = '';
+
+            if (finalState.status === 'win') {
+                db.updateBalance(message.author.id, finalState.bet * 2);
+                resultText = `**You won ${finalState.bet} coins**`;
+                finalResult = 'You Won';
+                color = 'Green';
+            } else if (finalState.status === 'loss') {
+                resultText = `**You lost ${finalState.bet} coins**`;
+                finalResult = 'You Lost';
+                color = 'Red';
+            } else {
+                db.updateBalance(message.author.id, finalState.bet);
+                resultText = `**You broke even**`;
+                finalResult = 'Push, money back';
+            }
+
+            const playerFinalScore = finalState.playerScore === 21 ? 'Blackjack' : finalState.playerScore;
+            const dealerFinalScore = finalState.dealerScore === 21 ? 'Blackjack' : finalState.dealerScore;
+
+            const resultEmbed = new EmbedBuilder()
+                .setAuthor({ name: message.author.tag, iconURL: message.author.displayAvatarURL() })
+                .setDescription(resultText)
+                .addFields(
+                    { name: 'Your Hand', value: `${formatHandEmoji(finalState.playerHand)}\nValue: ${playerFinalScore}`, inline: true },
+                    { name: 'Dealer Hand', value: `${formatHandEmoji(finalState.dealerHand)}\nValue: ${dealerFinalScore}`, inline: true }
+                )
+                .setFooter({ text: `Result: ${finalResult}` })
+                .setColor(color);
+
+            return i.editReply({
+                embeds: [resultEmbed],
+                components: []
+            });
+        }
+    });
+
+    collector.on('end', (collected, reason) => {
+        if (reason === 'time') {
+            if (activeGames.get(message.author.id) === game) {
+                activeGames.delete(message.author.id);
+            }
+            
+            response.edit({ components: [] }).catch(() => {});
+        }
+    });
 }
 
 client.login(process.env.DISCORD_TOKEN);

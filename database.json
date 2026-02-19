@@ -1,0 +1,14 @@
+{
+  "users": {
+    "855394869971255296": {
+      "balance": 0,
+      "isAdmin": false,
+      "lastClaimed": "2026-02-19T02:48:01.490Z"
+    },
+    "1471400147953913866": {
+      "balance": 20302,
+      "isAdmin": false,
+      "lastClaimed": "2026-02-12T08:33:28.605Z"
+    }
+  }
+}
